@@ -17,6 +17,7 @@
 #include "constants/constants.h"
 #include "../common/utils/disassembly/disassembly.h"
 #include <time.h>	
+#include <arkdrv-api/arkdrv-api.h>
 
 struct CommandHelpItem {
 	std::wstring cmd;
@@ -448,9 +449,11 @@ Q_INVOKABLE void Cmds::CmdProcessInfo(QString cmd, QStringList argv)
 
 	auto KillPids = [&](std::vector<DWORD> &pids) {
 		for (auto pid : pids) {
-			auto name = UNONE::PsGetProcessNameW(pid);
-			auto path = UNONE::PsGetProcessPathW(pid);
-			bool killed = UNONE::PsKillProcess(pid);
+			ProcInfo info;
+			CacheGetProcInfo(pid, info);
+			auto name = QToWStr(info.name);
+			auto path = QToWStr(info.path);
+			bool killed = PsKillProcess(pid);
 			if (killed) {
 				CmdOutput(L"[+] kill pid:%d name:%s path:%s ok", pid, name.c_str(), path.c_str());
 			} else {
@@ -461,9 +464,11 @@ Q_INVOKABLE void Cmds::CmdProcessInfo(QString cmd, QStringList argv)
 
 	auto RestartPids = [&](std::vector<DWORD> &pids) {
 		for (auto pid : pids) {
-			auto name = UNONE::PsGetProcessNameW(pid);
-			auto path = UNONE::PsGetProcessPathW(pid);
-			bool killed = UNONE::PsKillProcess(pid);
+			ProcInfo info;
+			CacheGetProcInfo(pid, info);
+			auto name = QToWStr(info.name);
+			auto path = QToWStr(info.path);
+			bool killed = PsKillProcess(pid);
 			if (killed) {
 				UNONE::PsCreateProcessW(path);
 				CmdOutput(L"[+] restart pid:%d name:%s path:%s ok", pid, name.c_str(), path.c_str());
@@ -680,7 +685,7 @@ Q_INVOKABLE void Cmds::CmdMemoryEditor(QString cmd, QStringList argv)
 	if (argc == 4) {
 		DWORD pid = VariantInt(argv[1].toStdString(), 10);
 		if (argv[0] == "r") {
-			HANDLE phd = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, pid);
+			HANDLE phd = ArkDrvApi::Process::OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, pid);
 			ON_SCOPE_EXIT([&phd] {if (phd) CloseHandle(phd); });
 			if (!phd) return ERR(L"OpenProcess pid:%d err:%d", pid, GetLastError());
 			DWORD64 addr = VariantInt64(argv[2].toStdString());
@@ -697,7 +702,7 @@ Q_INVOKABLE void Cmds::CmdMemoryEditor(QString cmd, QStringList argv)
 			return CmdOutput("%s", hexdump.c_str());
 		}
 		if (argv[0] == "w") {
-			HANDLE phd = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_WRITE, FALSE, pid);
+			HANDLE phd = ArkDrvApi::Process::OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_WRITE, FALSE, pid);
 			ON_SCOPE_EXIT([&phd] {if (phd) CloseHandle(phd); });
 			if (!phd) return ERR(L"OpenProcess pid:%d err:%d", pid, GetLastError());
 			DWORD64 addr = VariantInt64(argv[2].toStdString());
