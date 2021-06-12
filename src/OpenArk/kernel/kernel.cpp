@@ -203,6 +203,36 @@ void Kernel::onTabChanged(int index)
 	CommonMainTabObject::onTabChanged(index);
 }
 
+std::string OsReleaseNumber()
+{
+	/*
+	//c++11
+	std::map<DWORD, DWORD> tables = {
+		{ 10240, 1507 }, { 10586, 1511} ,{ 14393, 1607 } ,{ 15063, 1703 } ,{ 16299, 1709 } ,{ 17134, 1803 } ,
+		{ 17763, 1809 }, { 18362, 1903 } ,{ 18363, 1909 } ,{ 19041, 2004 }, { 19042, 20H2 }
+	};*/
+
+	std::pair<DWORD, std::string> pairs[] = {
+		std::make_pair(10240, "1507"),
+		std::make_pair(10586, "1511"),
+		std::make_pair(14393, "1607"),
+		std::make_pair(15063, "1703"),
+		std::make_pair(16299, "1709"),
+		std::make_pair(17134, "1803"),
+		std::make_pair(17763, "1809"),
+		std::make_pair(18362, "1903"),
+		std::make_pair(18363, "1909"),
+		std::make_pair(19041, "2004"),
+		std::make_pair(19042, "20H2"),
+	};
+	std::map<DWORD, std::string> tables(pairs, pairs+_countof(pairs));
+
+	DWORD build = UNONE::OsBuildNumber();
+	auto it = tables.find(build);
+	if (it != tables.end())
+		return it->second;
+	return "";
+}
 void Kernel::InitKernelEntryView()
 {
 	kerninfo_model_ = new QStandardItemModel;
@@ -234,7 +264,7 @@ void Kernel::InitKernelEntryView()
 	auto major = UNONE::OsMajorVer();
 	AddSummaryUpItem(tr("MajorVersion"), DWordToDecQ(major));
 	AddSummaryUpItem(tr("MiniorVersion"), DWordToDecQ(UNONE::OsMinorVer()));
-	if (major >= 10) AddSummaryUpItem(tr("ReleaseNumber"), DWordToDecQ(UNONE::OsReleaseNumber()));
+	if (major >= 10) AddSummaryUpItem(tr("ReleaseNumber"), StrToQ(OsReleaseNumber()));
 	AddSummaryUpItem(tr("BuildNumber"), DWordToDecQ(UNONE::OsBuildNumber()));
 	AddSummaryUpItem(tr("MajorServicePack"), DWordToDecQ(info.wServicePackMajor));
 	AddSummaryUpItem(tr("MiniorServicePack"), DWordToDecQ(info.wServicePackMinor));
@@ -248,6 +278,12 @@ void Kernel::InitKernelEntryView()
 	AddSummaryUpItem(tr("SystemRoot"), WStrToQ(UNONE::OsWinDirW()));
 
 	connect(ui.kernelModeBtn, SIGNAL(clicked()), this, SLOT(onClickKernelMode()));
+	connect(ui.kernelInfoView, &QTableView::doubleClicked, [&](QModelIndex idx) {
+		QString &txt = idx.data().toString();
+		if (txt == tr("ReleaseNumber") || txt == tr("BuildNumber")) {
+			ShellOpenUrl("https://docs.microsoft.com/en-us/windows/release-information/");
+		}
+	});
 
 	arkdrv_conn_ = false;
 	auto timer = new QTimer(this);
@@ -261,14 +297,14 @@ void Kernel::InitNotifyView()
 	QTreeView *view = ui.notifyView;
 	notify_model_ = new QStandardItemModel;
 	proxy_notify_ = new NotifySortFilterProxyModel(view);
-	std::pair<int, QString> layout[] = {
+	std::vector<std::pair<int, QString>> layout = {
 		{ 150, tr("Callback Entry") },
 		{ 100, tr("Type") },
 		{ 360, tr("Path") },
 		{ 230, tr("Description") },
 		{ 120, tr("Version") },
 		{ 160, tr("Company") } };
-	SetDefaultTreeViewStyle(view, notify_model_, proxy_notify_, layout, _countof(layout));
+	SetDefaultTreeViewStyle(view, notify_model_, proxy_notify_, layout);
 	view->viewport()->installEventFilter(this);
 	view->installEventFilter(this);
 
@@ -318,7 +354,7 @@ void Kernel::InitHotkeyView()
 	hotkey_model_ = new QStandardItemModel;
 	proxy_hotkey_ = new HotkeySortFilterProxyModel(view);
 
-	std::pair<int, QString> colum_layout[] = { 
+	static std::vector<std::pair<int, QString>> layout = {
 	{ 150, tr("Name") },
 	{ 100, tr("PID.TID") },
 	{ 180, tr("Hotkey") },
@@ -329,7 +365,7 @@ void Kernel::InitHotkeyView()
 	{ 180, tr("ClassName") },
 	{ 300, tr("Path") },
 	{ 160, tr("Description") } };
-	SetDefaultTreeViewStyle(view, hotkey_model_, proxy_hotkey_, colum_layout, _countof(colum_layout));
+	SetDefaultTreeViewStyle(view, hotkey_model_, proxy_hotkey_, layout);
 	view->viewport()->installEventFilter(this);
 	view->installEventFilter(this);
 	ui.hkFilterEdit->installEventFilter(this);
@@ -339,8 +375,8 @@ void Kernel::InitHotkeyView()
 	hotkey_menu_->addAction(tr("Refresh"), this, [&] { ShowSystemHotkey(); });
 	hotkey_menu_->addSeparator();
 	hotkey_menu_->addAction(tr("Delete Hotkey"), this, [&] {
-		ULONG32 vkid = QHexToDWord(HotkeyItemData(3));
-		auto arr = HotkeyItemData(1).split(".");
+		ULONG32 vkid = QHexToDWord(HotkeyItemData(LAYOUT_INDEX("HotkeyID")));
+		auto arr = HotkeyItemData(LAYOUT_INDEX("PID.TID")).split(".");
 		ULONG32 pid = QDecToDWord(arr[0]);
 		ULONG32 tid = QDecToDWord(arr[1]);
 		HOTKEY_ITEM item;
@@ -359,13 +395,13 @@ void Kernel::InitHotkeyView()
 	hotkey_menu_->addSeparator();
 	hotkey_menu_->addAction(tr("Sendto Scanner"), this, [&] {
 		parent_->SetActiveTab(TAB_SCANNER);
-		emit signalOpen(HotkeyItemData(7));
+		emit signalOpen(HotkeyItemData(LAYOUT_INDEX("Path")));
 	});
 	hotkey_menu_->addAction(tr("Explore File"), this, [&] {
-		ExploreFile(HotkeyItemData(7));
+		ExploreFile(HotkeyItemData(LAYOUT_INDEX("Path")));
 	});
 	hotkey_menu_->addAction(tr("Properties..."), this, [&]() {
-		WinShowProperties(HotkeyItemData(7).toStdWString());
+		WinShowProperties(HotkeyItemData(LAYOUT_INDEX("Path")).toStdWString());
 	});
 	connect(ui.hkFilterEdit, &QLineEdit::textChanged, [&](QString str) { ShowSystemHotkey(); });
 }
